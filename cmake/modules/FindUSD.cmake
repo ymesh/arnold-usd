@@ -112,23 +112,6 @@ find_path(USD_BINARY_DIR
     "$ENV{USD_LOCATION}/bin"
     DOC "Path to USD binaries.")
 
-# USD Maya components
-
-find_path(USD_MAYA_INCLUDE_DIR usdMaya/api.h
-    PATHS "${USD_LOCATION}/third_party/maya/include"
-    "$ENV{USD_LOCATION}/third_party/maya/include"
-    "${USD_MAYA_ROOT}/third_party/maya/include"
-    "$ENV{USD_MAYA_ROOT}/third_party/maya/include"
-    DOC "USD Maya Include directory")
-
-find_path(USD_MAYA_LIBRARY_DIR
-    NAMES ${USD_LIB_PREFIX}usdMaya${USD_LIB_EXTENSION}
-    PATHS "${USD_LOCATION}/third_party/maya/lib"
-    "$ENV{USD_LOCATION}/third_party/maya/lib"
-    "${USD_MAYA_ROOT}/third_party/maya/lib"
-    "$ENV{USD_MAYA_ROOT}/third_party/maya/lib"
-    DOC "USD Maya Library directory")
-
 
 if (USD_INCLUDE_DIR AND EXISTS "${USD_INCLUDE_DIR}/pxr/pxr.h")
     foreach (_usd_comp MAJOR MINOR PATCH)
@@ -165,10 +148,34 @@ if (USD_INCLUDE_DIR AND EXISTS "${USD_INCLUDE_DIR}/pxr/imaging/hdx/fullscreenSha
     set(USD_HAS_FULLSCREEN_SHADER ON)
 endif ()
 
+if (WIN32)
+    set(USD_LIB_PREFIX "" CACHE STRING "Prefix of USD libraries")
+else ()
+    if (USD_VERSION STREQUAL "0.21.11")
+        message("*** USD_VERSION = ${USD_VERSION}")
+        set(USD_LIB_PREFIX libusd_ CACHE STRING "Prefix of USD libraries")
+    else ()
+        set(USD_LIB_PREFIX lib CACHE STRING "Prefix of USD libraries")
+    endif ()
+endif ()
+
+# We need to find either usd or usd_ms, with taking the prefix into account.
+find_path(USD_LIBRARY_DIR
+    NAMES ${USD_LIB_PREFIX}usd${USD_LIB_EXTENSION}
+    ${USD_LIB_PREFIX}usd_ms${USD_LIB_EXTENSION}
+    ${USD_LIB_PREFIX}usd_m${USD_STATIC_LIB_EXTENSION}
+    PATHS "${USD_LIBRARY_DIR}"
+    "${USD_LOCATION}/lib"
+    "$ENV{USD_LOCATION}/lib"
+    DOC "USD Libraries directory")
+
+message("*** USD_LIBRARY_DIR = ${USD_LIBRARY_DIR}")
+
 # Look for the dynamic libraries.
 # Right now this is using a hardcoded list of libraries, but in the future we should parse the installed cmake files
 # and figure out the list of the names for libraries.
 set(USD_LIBS ar;arch;cameraUtil;garch;gf;glf;hd;hdMtlx;hdSt;hdx;hf;hgi;hgiGL;hgInterop;hio;js;kind;ndr;pcp;plug;pxOsd;sdf;sdr;tf;trace;usd;usdAppUtils;usdGeom;usdHydra;usdImaging;usdImagingGL;usdLux;usdMedia;usdRender;usdRi;usdRiImaging;usdShade;usdSkel;usdSkelImaging;usdUI;usdUtils;usdviewq;usdVol;usdVolImaging;vt;work;usd_ms)
+
 
 foreach (lib ${USD_LIBS})
     find_library(USD_${lib}_LIBRARY

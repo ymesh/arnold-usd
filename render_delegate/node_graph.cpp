@@ -517,6 +517,8 @@ std::vector<AtNode*> HdArnoldNodeGraph::GetTerminals(const TfToken& terminalName
 
 AtNode* HdArnoldNodeGraph::ReadMaterialNetwork(const HdMaterialNetwork& network)
 {
+    TF_DEBUG(HDARNOLD_MATERIAL).Msg("HdArnoldMaterial::ReadMaterialNetwork...\n");
+
     std::vector<AtNode*> nodes;
     nodes.reserve(network.nodes.size());
     for (const auto& node : network.nodes) {
@@ -607,6 +609,9 @@ AtNode* HdArnoldNodeGraph::ReadMaterialNetwork(const HdMaterialNetwork& network)
     }
 
     auto* entryPoint = nodes.empty() ? nullptr : nodes.front();
+    if ( nodes.empty() ) {
+        TF_DEBUG(HDARNOLD_MATERIAL).Msg("HdArnoldMaterial::ReadMaterialNetwork -- nodes.empty()\n");
+    }
     return entryPoint;
 }
 
