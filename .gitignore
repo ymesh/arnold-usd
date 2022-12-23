@@ -1,4 +1,6 @@
-*/build
+/build/env_*
+/build/tmp_*
+
 */install
 */download
 .externalToolBuilders
@@ -25,7 +27,7 @@ compile_commands.json
 .sconsign.dblite
 custom*.py
 dist
-build
+#build
 install
 bin
 lib
