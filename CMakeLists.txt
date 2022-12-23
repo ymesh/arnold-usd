@@ -54,9 +54,15 @@ else ()
     set(PYTHON_EXECUTABLE ${Python2_EXECUTABLE})
 endif ()
 
+# XXX
+set (Boost_NO_SYSTEM_PATHS ON)
+set (Boost_NO_BOOST_CMAKE ON)
+set (Boost_DEBUG ON)
+# XXX
+
 if (NOT BUILD_USE_CUSTOM_BOOST)
     if (USD_HAS_PYTHON)
-        find_package(Boost COMPONENTS python REQUIRED PATHS ${USD_LOCATION})
+        find_package(Boost COMPONENTS python39 REQUIRED PATHS ${USD_LOCATION})
     else ()
         find_package(Boost REQUIRED PATHS ${USD_LOCATION})
     endif ()
@@ -67,6 +73,8 @@ if (BUILD_BOOST_ALL_NO_LIB AND WIN32)
     # This is for Houdini's boost libs.
     add_compile_definitions(HBOOST_ALL_NO_LIB=1)
 endif ()
+
+message("*** Boost_LIBRARIES = ${Boost_LIBRARIES}")
 
 find_package(TBB REQUIRED)
 
