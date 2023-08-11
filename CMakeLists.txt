@@ -60,6 +60,13 @@ if (NOT BUILD_USE_CUSTOM_BOOST)
     else ()
         find_package(Boost REQUIRED PATHS ${USD_LOCATION})
     endif ()
+else ()
+    # XXX: we have boost in other locations
+    if (USD_HAS_PYTHON)
+        find_package(Boost COMPONENTS python REQUIRED)
+    else ()
+        find_package(Boost REQUIRED)
+    endif ()
 endif ()
 # This disables explicit linking from boost headers on Windows.
 if (BUILD_BOOST_ALL_NO_LIB AND WIN32)
