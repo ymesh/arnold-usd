@@ -12,7 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import build_tools, system, os
+import os
+from . import build_tools
+from . import system
 
 def get_boost_lib(env, lib):
     return env['BOOST_LIB_NAME'] % lib
@@ -62,32 +64,16 @@ def render_delegate(env, sources):
         'usdLux',
         'pxOsd',
         'cameraUtil',
+        'usd', # common/rendersettings_utils.h
+        'usdGeom', # common/rendersettings_utils.h
+        'usdRender', # common/rendersettings_utils.h
+        'pcp', # common
+        'usdShade', # common
     ]
     if env['USD_VERSION_INT'] < 2005:
         usd_libs.append('hdx')
     return add_plugin_deps(env, sources, usd_libs, True)
 
-def hydra_test(env, sources):
-    usd_libs = [
-        'arch',
-        'plug',
-        'tf',
-        'vt',
-        'gf',
-        'work',
-        'hf',
-        'hd',
-        'sdf',
-        'usd',
-        'usdImaging', # for UsdImagingDelegate
-        'cameraUtil', # needed by hdx
-        'usdGeom', # for UsdGeomCamera
-        'trace',
-        'hdx',
-        'hio',
-        'hdSt', # For HStIo image conversions
-    ]
-    return add_plugin_deps(env, sources, usd_libs, True)
 
 # This only works with monolithic and shared usd dependencies.
 def ndr_plugin(env, sources):
@@ -100,6 +86,10 @@ def ndr_plugin(env, sources):
         'sdr',
         'sdf',
         'usd',
+        'usdGeom', # common
+        'usdRender', # common
+        'pcp', # common
+        'usdShade', # common
     ]
     return add_plugin_deps(env, sources, usd_libs, False)
 
@@ -118,12 +108,13 @@ def usd_imaging_plugin(env, sources):
         'sdr',
         'hf',
         'hd',
-        'hdx',
         'usd',
         'usdGeom',
         'usdImaging',
         'usdLux',
         'usdShade',
+        'usdRender', # common/rendersettings_utils.h
+        'pcp', # common
     ]
     return add_plugin_deps(env, sources, usd_libs, True)
 
@@ -194,9 +185,3 @@ def translator(env, sources):
         usd_libs, usd_sources = build_tools.link_usd_libraries(env, usd_libs)
         source_files = sources + usd_sources
         return (source_files, add_optional_libs(env, ['usd_translator'] + usd_deps + usd_libs))
-
-def add_common_src(env, module, source_files):
-    # Otherwise we are getting a build error.
-    if not system.IS_WINDOWS:
-        env['STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME'] = 1
-    return [env.Object(target = os.path.join(env['BUILD_ROOT_DIR'], module, 'common', '%s.o' % os.path.basename(src)), source = src) for src in env['COMMON_SRC']] + source_files

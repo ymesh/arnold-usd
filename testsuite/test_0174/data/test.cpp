@@ -9,7 +9,7 @@
 
 int main(int argc, char **argv)
 {
-    AiMsgSetConsoleFlags(AI_LOG_ALL);
+    AiMsgSetConsoleFlags(nullptr, AI_LOG_ALL);
     AiBegin();
     AtParamValueMap* params = AiParamValueMap();
     AiSceneWrite(nullptr, "scene.usda", params);
@@ -19,7 +19,7 @@ int main(int argc, char **argv)
 
     int optionsAttrs = 0;
     AtParamIterator* nodeParam = 
-            AiNodeEntryGetParamIterator(AiNodeGetNodeEntry(AiUniverseGetOptions()));
+            AiNodeEntryGetParamIterator(AiNodeGetNodeEntry(AiUniverseGetOptions(nullptr)));
     while (!AiParamIteratorFinished(nodeParam)) {
         AiParamIteratorGetNext(nodeParam);
         optionsAttrs++;
@@ -45,9 +45,15 @@ int main(int argc, char **argv)
     if (file2.is_open())
     {
         std::string line;
+        bool countAttrs = false; 
         while(std::getline(file2, line))
         {
-            if (line.find(" arnold:") != std::string::npos)
+            if (line.substr(0, 18) == std::string("def ArnoldOptions "))
+                countAttrs = true;
+            else if (line.substr(0, 4) == std::string("def "))
+                countAttrs = false;
+
+            if (countAttrs && line.find(" arnold:") != std::string::npos)
                 withDefaultCount++;        
         }
     }

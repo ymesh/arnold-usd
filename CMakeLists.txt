@@ -20,7 +20,7 @@ else ()
     set(LIB_EXTENSION ".dll")
     add_compile_definitions(_WINDOWS _WIN32 WIN32)
     add_compile_definitions(_WIN64)
-    add_link_option(/DEBUG)
+    add_link_options(/DEBUG)
 endif ()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules" 0)
@@ -70,10 +70,6 @@ endif ()
 
 find_package(TBB REQUIRED)
 
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/arnold_usd.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/arnold_usd.h")
-
 set(CMAKE_CXX_STANDARD 14 CACHE STRING "CMake CXX Standard")
 
 if (APPLE)
@@ -105,10 +101,6 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
             add_compile_options(-D_GLIBCXX_USE_CXX11_ABI=0)
         endif ()
     endif ()
-endif ()
-
-if (ENABLE_MATERIALX)
-    add_compile_options(-DARNOLD_MATERIALX=1)
 endif ()
 
 # Common directory includes.
@@ -153,16 +145,9 @@ if (NOT USD_STATIC_BUILD)
     endif ()
 endif ()
 
-if (BUILD_PROCEDURAL OR BUILD_USD_WRITER)
-    add_subdirectory(translator)
-endif ()
-
 if (BUILD_PROCEDURAL)
+    add_subdirectory(translator)
     add_subdirectory(procedural)
-endif ()
-
-if (BUILD_USD_WRITER)
-    add_subdirectory(cmd)
 endif ()
 
 if (BUILD_DOCS)
@@ -176,6 +161,3 @@ endif ()
 
 install(FILES LICENSE.md
     DESTINATION .)
-
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/arnold_usd.h"
-    DESTINATION "${PREFIX_HEADERS}/arnold_usd")

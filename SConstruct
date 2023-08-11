@@ -12,11 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import glob
-import re
 import shutil
 import sys, os
-import platform
 from SCons.Script import PathVariable
 import SCons
 
@@ -53,6 +50,8 @@ vars.AddVariables(
     EnumVariable('COMPILER', 'Set compiler to use', ALLOWED_COMPILERS[0], allowed_values=ALLOWED_COMPILERS),
     PathVariable('SHCXX', 'C++ compiler used for generating shared-library objects', None),
     EnumVariable('CXX_STANDARD', 'C++ standard for gcc/clang.', '11', allowed_values=('11', '14', '17', '20')),
+    BoolVariable('SHOW_CMDS', 'Display the actual command lines used for building', False),
+    BoolVariable('COLOR_CMDS' , 'Display colored output messages when building', False),
     PathVariable('ARNOLD_PATH', 'Arnold installation root', os.getenv('ARNOLD_PATH', None), PathVariable.PathIsDir),
     PathVariable('ARNOLD_API_INCLUDES', 'Where to find Arnold API includes', os.path.join('$ARNOLD_PATH', 'include'), PathVariable.PathIsDir),
     PathVariable('ARNOLD_API_LIB', 'Where to find Arnold API static libraries', arnold_default_api_lib, PathVariable.PathIsDir),
@@ -81,7 +80,6 @@ vars.AddVariables(
     PathVariable('GOOGLETEST_INCLUDE', 'Where to find Google Test includes', os.path.join('$GOOGLETEST_PATH', 'include'), PathVariable.PathAccept),
     PathVariable('GOOGLETEST_LIB', 'Where to find Google Test libraries', os.path.join('$GOOGLETEST_PATH', 'lib64' if IS_LINUX else 'lib'), PathVariable.PathAccept),
     BoolVariable('ENABLE_UNIT_TESTS', 'Whether or not to enable C++ unit tests. This feature requires Google Test.', False),
-    BoolVariable('ENABLE_HYDRA_TEST', 'Whether or not to enable hydra_test', False),
     EnumVariable('TEST_ORDER', 'Set the execution order of tests to be run', 'reverse', allowed_values=('normal', 'reverse')),
     EnumVariable('SHOW_TEST_OUTPUT', 'Display the test log as it is being run', 'single', allowed_values=('always', 'never', 'single')),
     EnumVariable('USE_VALGRIND', 'Enable Valgrinding', 'False', allowed_values=('False', 'True', 'Full')),
@@ -101,26 +99,26 @@ vars.AddVariables(
     BoolVariable('BUILD_RENDER_DELEGATE', 'Whether or not to build the hydra render delegate.', True),
     BoolVariable('BUILD_NDR_PLUGIN', 'Whether or not to build the node registry plugin.', True),
     BoolVariable('BUILD_USD_IMAGING_PLUGIN', 'Whether or not to build the usdImaging plugin.', True),
-    BoolVariable('BUILD_USD_WRITER', 'Whether or not to build the arnold to usd writer tool.', True),
     BoolVariable('BUILD_PROCEDURAL', 'Whether or not to build the arnold procedural.', True),
     BoolVariable('BUILD_SCENE_DELEGATE', 'Whether or not to build the arnold scene delegate.', False),
     BoolVariable('BUILD_TESTSUITE', 'Whether or not to build the testsuite.', True),
     BoolVariable('BUILD_DOCS', 'Whether or not to build the documentation.', True),
     BoolVariable('PROC_SCENE_FORMAT', 'Whether or not to build the procedural with a scene format plugin.', True),
     BoolVariable('DISABLE_CXX11_ABI', 'Disable the use of the CXX11 abi for gcc/clang', False),
-    BoolVariable('ENABLE_MATERIALX', 'Support reading MaterialX shaders', False),
+    BoolVariable('ENABLE_HYDRA_IN_USD_PROCEDURAL', 'Enable building hydra render delegate in the usd procedural', False),
     StringVariable('BOOST_LIB_NAME', 'Boost library name pattern', 'boost_%s'),
     StringVariable('TBB_LIB_NAME', 'TBB library name pattern', '%s'),
     StringVariable('USD_MONOLITHIC_LIBRARY', 'Name of the USD monolithic library', 'usd_ms'),
     StringVariable('PYTHON_LIB_NAME', 'Name of the python library', 'python27'),
     StringVariable('USD_PROCEDURAL_NAME', 'Name of the usd procedural.', 'usd'),
     StringVariable('USDGENSCHEMA_CMD', 'Custom command to run usdGenSchema', None),
+    StringVariable('TESTSUITE_OUTPUT', 'Optional output path where the testsuite results are saved', None),
     ('TEST_PATTERN', 'Glob pattern of tests to be run', 'test_*'),
     ('KICK_PARAMS', 'Additional parameters for kick', '-v 6')
 )
 
 if IS_WINDOWS:
-    vars.Add(EnumVariable('MSVC_VERSION', 'Version of MS Visual Studio to use', '14.0', allowed_values=('8.0', '9.0', '10.0', '11.0', '14.0', '14.1', '14.2')))
+    vars.Add(('MSVC_VERSION', 'Version of MS Visual C++ Compiler to use', '14.2'))
 else:
     vars.Add(BoolVariable('RPATH_ADD_ARNOLD_BINARIES', 'Add Arnold binaries to the RPATH', False))
 
@@ -129,9 +127,11 @@ if IS_DARWIN:
     vars.Add(PathVariable('SDK_PATH', 'Root path to installed OSX SDKs', '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs'))
     vars.Add(('MACOS_VERSION_MIN', 'Minimum compatibility with Mac OSX', '10.11'))
     vars.Add(('MACOS_ARCH', 'Mac OS ARCH', 'x86_64'))
+    vars.Add(StringVariable('EXTRA_FRAMEWORKS', 'Optional frameworks to link against. semi colon separated list of framework names', ''))
+
 
 # Create the scons environment
-env = Environment(variables = vars, ENV = os.environ, tools = ['default', 'doxygen'])
+env = Environment(variables = vars, ENV = os.environ, tools = ['default'])
 
 BUILD_DIR = env.subst(env['BUILD_DIR'])
 REFERENCE_DIR = env.subst(env['REFERENCE_DIR'])
@@ -147,20 +147,19 @@ if IS_DARWIN:
 env['ARNOLD_ADP_DISABLE'] = "1"
 os.environ['ARNOLD_ADP_DISABLE'] = '1'
 
-def get_optional_env_var(env_name):
-    return env.subst(env[env_name]) if env_name in env else None
+def get_optional_env_path(env_name):
+    return os.path.abspath(env.subst(env[env_name])) if env_name in env else None
 
 USD_BUILD_MODE        = env['USD_BUILD_MODE']
 
-BUILD_SCHEMAS            = env['BUILD_SCHEMAS']
-BUILD_RENDER_DELEGATE    = env['BUILD_RENDER_DELEGATE'] if USD_BUILD_MODE != 'static' else False
-BUILD_NDR_PLUGIN         = env['BUILD_NDR_PLUGIN'] if USD_BUILD_MODE != 'static' else False
-BUILD_USD_IMAGING_PLUGIN = env['BUILD_USD_IMAGING_PLUGIN'] if BUILD_SCHEMAS else False
-BUILD_SCENE_DELEGATE     = env['BUILD_SCENE_DELEGATE'] if USD_BUILD_MODE != 'static' else False
-BUILD_USD_WRITER         = env['BUILD_USD_WRITER']
-BUILD_PROCEDURAL         = env['BUILD_PROCEDURAL']
-BUILD_TESTSUITE          = env['BUILD_TESTSUITE']
-BUILD_DOCS               = env['BUILD_DOCS']
+BUILD_SCHEMAS                = env['BUILD_SCHEMAS']
+BUILD_RENDER_DELEGATE        = env['BUILD_RENDER_DELEGATE'] if USD_BUILD_MODE != 'static' else False
+BUILD_NDR_PLUGIN             = env['BUILD_NDR_PLUGIN']
+BUILD_USD_IMAGING_PLUGIN     = env['BUILD_USD_IMAGING_PLUGIN'] if BUILD_SCHEMAS else False
+BUILD_SCENE_DELEGATE         = env['BUILD_SCENE_DELEGATE'] if USD_BUILD_MODE != 'static' else False
+BUILD_PROCEDURAL             = env['BUILD_PROCEDURAL']
+BUILD_TESTSUITE              = env['BUILD_TESTSUITE']
+BUILD_DOCS                   = env['BUILD_DOCS']
 
 USD_LIB_PREFIX        = env['USD_LIB_PREFIX']
 
@@ -180,14 +179,11 @@ if not IS_WINDOWS:
 
 env['USD_LIB_PREFIX'] = USD_LIB_PREFIX
 
-# Forcing the build of the procedural when the testsuite is enabled.
-if BUILD_TESTSUITE:
-    BUILD_PROCEDURAL = True
+ARNOLD_PATH         = os.path.abspath(env.subst(env['ARNOLD_PATH']))
+ARNOLD_API_INCLUDES = os.path.abspath(env.subst(env['ARNOLD_API_INCLUDES']))
+ARNOLD_API_LIB      = os.path.abspath(env.subst(env['ARNOLD_API_LIB']))
+ARNOLD_BINARIES     = os.path.abspath(env.subst(env['ARNOLD_BINARIES']))
 
-ARNOLD_PATH         = env.subst(env['ARNOLD_PATH'])
-ARNOLD_API_INCLUDES = env.subst(env['ARNOLD_API_INCLUDES'])
-ARNOLD_API_LIB      = env.subst(env['ARNOLD_API_LIB'])
-ARNOLD_BINARIES     = env.subst(env['ARNOLD_BINARIES'])
 
 if not IS_WINDOWS and env['RPATH_ADD_ARNOLD_BINARIES']:
     env['RPATH'] = ARNOLD_BINARIES
@@ -205,10 +201,10 @@ PREFIX_SCHEMAS            = env.subst(env['PREFIX_SCHEMAS'])
 PREFIX_BIN                = env.subst(env['PREFIX_BIN'])
 PREFIX_DOCS               = env.subst(env['PREFIX_DOCS'])
 
-USD_PATH = env.subst(env['USD_PATH'])
-USD_INCLUDE = env.subst(env['USD_INCLUDE'])
-USD_LIB = env.subst(env['USD_LIB'])
-USD_BIN = env.subst(env['USD_BIN'])
+USD_PATH = os.path.abspath(env.subst(env['USD_PATH']))
+USD_INCLUDE = os.path.abspath(env.subst(env['USD_INCLUDE']))
+USD_LIB = os.path.abspath(env.subst(env['USD_LIB']))
+USD_BIN = os.path.abspath(env.subst(env['USD_BIN']))
 
 # Storing values after expansion
 env['USD_PATH'] = USD_PATH
@@ -218,12 +214,12 @@ env['USD_BIN'] = USD_BIN
 env['PREFIX_RENDER_DELEGATE'] = PREFIX_RENDER_DELEGATE
 
 # these could be supplied by linux / osx
-BOOST_INCLUDE = get_optional_env_var('BOOST_INCLUDE')
-BOOST_LIB = get_optional_env_var('BOOST_LIB')
-PYTHON_INCLUDE = get_optional_env_var('PYTHON_INCLUDE')
-PYTHON_LIB = get_optional_env_var('PYTHON_LIB')
-TBB_INCLUDE = get_optional_env_var('TBB_INCLUDE')
-TBB_LIB = get_optional_env_var('TBB_LIB')
+BOOST_INCLUDE = get_optional_env_path('BOOST_INCLUDE')
+BOOST_LIB = get_optional_env_path('BOOST_LIB')
+PYTHON_INCLUDE = get_optional_env_path('PYTHON_INCLUDE')
+PYTHON_LIB = get_optional_env_path('PYTHON_LIB')
+TBB_INCLUDE = get_optional_env_path('TBB_INCLUDE')
+TBB_LIB = get_optional_env_path('TBB_LIB')
 if env['ENABLE_UNIT_TESTS']:
     GOOGLETEST_INCLUDE = env.subst(env['GOOGLETEST_INCLUDE'])
     GOOGLETEST_LIB = env.subst(env['GOOGLETEST_LIB'])
@@ -248,18 +244,28 @@ if env['PROC_SCENE_FORMAT']:
     env['ARNOLD_HAS_SCENE_FORMAT_API'] = get_arnold_has_scene_format_api(ARNOLD_API_INCLUDES)
 else:
     env['ARNOLD_HAS_SCENE_FORMAT_API'] = 0
+    
+if BUILD_SCHEMAS or BUILD_RENDER_DELEGATE or BUILD_NDR_PLUGIN or BUILD_USD_IMAGING_PLUGIN or BUILD_SCENE_DELEGATE or BUILD_PROCEDURAL or BUILD_DOCS:
+    # Get USD Version
+    header_info = get_usd_header_info(USD_INCLUDE) 
+    env['USD_VERSION'] = header_info['USD_VERSION']
+    env['USD_VERSION_INT'] = header_info['USD_VERSION_INT']
+    env['USD_HAS_PYTHON_SUPPORT'] = header_info['USD_HAS_PYTHON_SUPPORT']
+    env['USD_HAS_UPDATED_COMPOSITOR'] = header_info['USD_HAS_UPDATED_COMPOSITOR']
+    env['USD_HAS_FULLSCREEN_SHADER'] = header_info['USD_HAS_FULLSCREEN_SHADER']
+elif BUILD_TESTSUITE:
+    # Need to set dummy values for the testsuite to run properly without 
+    # recompiling arnold-usd
+    env['USD_VERSION'] = ''
+    env['USD_HAS_PYTHON_SUPPORT'] = ''
 
-# Get USD Version
-header_info = get_usd_header_info(USD_INCLUDE) 
-env['USD_VERSION'] = header_info['USD_VERSION']
-env['USD_VERSION_INT'] = header_info['USD_VERSION_INT']
-env['USD_HAS_PYTHON_SUPPORT'] = header_info['USD_HAS_PYTHON_SUPPORT']
-env['USD_HAS_UPDATED_COMPOSITOR'] = header_info['USD_HAS_UPDATED_COMPOSITOR']
-env['USD_HAS_FULLSCREEN_SHADER'] = header_info['USD_HAS_FULLSCREEN_SHADER']
+# If we're building the testsuite, we need to ensure the procedural is setup here
+if BUILD_TESTSUITE:
+    BUILD_PROCEDURAL = True    
+
 
 if env['COMPILER'] in ['gcc', 'clang'] and env['SHCXX'] != '$CXX':
    env['GCC_VERSION'] = os.path.splitext(os.popen(env['SHCXX'] + ' -dumpversion').read())[0]
-
 
 print("Building Arnold-USD:")
 print(" - Build mode: '{}'".format(env['MODE']))
@@ -283,6 +289,10 @@ elif IS_WINDOWS:
         env.Append(CPPDEFINES = Split('__TBB_NO_IMPLICIT_LINKAGE=1'))
     if env['BOOST_ALL_NO_LIB']:
         env.Append(CPPDEFINES = Split('BOOST_ALL_NO_LIB HBOOST_ALL_NO_LIB'))
+
+# If USD is built in static, we need to define PXR_STATIC in order to hide the symbols
+if env['USD_BUILD_MODE'] == 'static':
+    env.Append(CPPDEFINES=['PXR_STATIC'])
 
 # Adding USD paths to environment for the teststuite
 dylib = 'PATH' if IS_WINDOWS else ('DYLD_LIBRARY_PATH' if IS_DARWIN else 'LD_LIBRARY_PATH')
@@ -359,7 +369,7 @@ if env['COMPILER'] in ['gcc', 'clang']:
 elif env['COMPILER'] == 'msvc':
     env.Append(CCFLAGS=Split('/EHsc'))
     env.Append(LINKFLAGS=Split('/Machine:X64'))
-    env.Append(CCFLAGS=Split('/D "NOMINMAX"'))
+    env.Append(CCFLAGS=Split('/D "NOMINMAX" /Zc:inline-'))
     # Optimization/profile/debug flags
     if env['MODE'] == 'opt':
         env.Append(CCFLAGS=Split('/O2 /Oi /Ob2 /MD'))
@@ -369,6 +379,38 @@ elif env['COMPILER'] == 'msvc':
     else:  # debug mode
         env.Append(CCFLAGS=Split('/Od /Zi /MD'))
         env.Append(LINKFLAGS=Split('/DEBUG'))
+
+
+if not env['SHOW_CMDS']:
+    # Hide long compile lines from the user
+    arch = env['MACOS_ARCH'] if IS_DARWIN else 'x86_64'
+    env['CCCOMSTR']     = 'Compiling {} $SOURCE ...'.format(arch)
+    env['SHCCCOMSTR']   = 'Compiling {} $SOURCE ...'.format(arch)
+    env['CXXCOMSTR']    = 'Compiling {} $SOURCE ...'.format(arch)
+    env['SHCXXCOMSTR']  = 'Compiling {} $SOURCE ...'.format(arch)
+    env['LINKCOMSTR']   = 'Linking {} $TARGET ...'.format(arch)
+    env['SHLINKCOMSTR'] = 'Linking {} $TARGET ...'.format(arch)
+    env['LEXCOMSTR']    = 'Generating $TARGET ...'
+    env['YACCCOMSTR']   = 'Generating $TARGET ...'
+    env['RCCOMSTR']     = 'Generating $TARGET ...'
+    if env['COLOR_CMDS']:
+        from utils.contrib import colorama
+        from utils.contrib.colorama import Fore, Style
+        colorama.init(convert=system.is_windows, strip=False)
+
+        ansi_bold_green     = Fore.GREEN + Style.BRIGHT
+        ansi_bold_red       = Fore.RED + Style.BRIGHT
+        ansi_bold_yellow    = Fore.YELLOW + Style.BRIGHT
+
+        env['CCCOMSTR']     = ansi_bold_green + env['CCCOMSTR'] + Style.RESET_ALL
+        env['SHCCCOMSTR']   = ansi_bold_green + env['SHCCCOMSTR'] + Style.RESET_ALL
+        env['CXXCOMSTR']    = ansi_bold_green + env['CXXCOMSTR'] + Style.RESET_ALL
+        env['SHCXXCOMSTR']  = ansi_bold_green + env['SHCXXCOMSTR'] + Style.RESET_ALL
+        env['LINKCOMSTR']   = ansi_bold_red + env['LINKCOMSTR'] + Style.RESET_ALL
+        env['SHLINKCOMSTR'] = ansi_bold_red + env['SHLINKCOMSTR'] + Style.RESET_ALL
+        env['LEXCOMSTR']    = ansi_bold_yellow + env['LEXCOMSTR'] + Style.RESET_ALL
+        env['YACCCOMSTR']   = ansi_bold_yellow + env['YACCCOMSTR'] + Style.RESET_ALL
+        env['RCCOMSTR']     = ansi_bold_yellow + env['RCCOMSTR'] + Style.RESET_ALL
 
 # Add include and lib paths to Arnold
 env.Append(CPPPATH = [ARNOLD_API_INCLUDES, USD_INCLUDE])
@@ -381,12 +423,6 @@ env.Append(LIBPATH = [p for p in [BOOST_LIB, PYTHON_LIB, TBB_LIB, GOOGLETEST_LIB
 
 env['ROOT_DIR'] = os.getcwd()
 
-if env['ENABLE_MATERIALX']:
-    env.Append(CPPDEFINES = Split('ARNOLD_MATERIALX'))
-    
-# including common headers
-env.Append(CPPPATH = [os.path.join(env['ROOT_DIR'], 'common')])
-env['COMMON_SRC'] = [os.path.join(env['ROOT_DIR'], 'common', src) for src in find_files_recursive(os.path.join(env['ROOT_DIR'], 'common'), ['.cpp'])]
 
 # Configure base directory for temp files
 if IS_DARWIN:
@@ -419,57 +455,62 @@ else:
 #     add_to_library_path(env, os.environ['PATH'])
 #     os.environ['PATH'] = env['ENV']['PATH']
 
+#
 # SCons scripts to build
-procedural_script = os.path.join('procedural', 'SConscript')
-procedural_build = os.path.join(BUILD_BASE_DIR, 'procedural')
+#
 
-cmd_script = os.path.join('cmd', 'SConscript')
-cmd_build = os.path.join(BUILD_BASE_DIR, 'cmd')
+# common 
+env.Append(CPPPATH = [os.path.join(env['ROOT_DIR'], 'libs', 'common')])
+#env['COMMON_SRC'] = [os.path.join(env['ROOT_DIR'], 'libs', 'common', src) for src in find_files_recursive(os.path.join(env['ROOT_DIR'], 'libs', 'common'), ['.cpp'])]
+common_script = os.path.join('libs', 'common', 'SConscript')
+common_build = os.path.join(BUILD_BASE_DIR, 'libs', 'common')
+COMMON = env.SConscript(common_script, variant_dir = common_build, duplicate = 0, exports = 'env')
+
+procedural_script = os.path.join('plugins', 'procedural', 'SConscript')
+procedural_build = os.path.join(BUILD_BASE_DIR, 'plugins', 'procedural')
 
 schemas_script = os.path.join('schemas', 'SConscript')
 schemas_build = os.path.join(BUILD_BASE_DIR, 'schemas')
 
-translator_script = os.path.join('translator', 'SConscript')
-translator_build = os.path.join(BUILD_BASE_DIR, 'translator')
+translator_script = os.path.join('libs', 'translator', 'SConscript')
+translator_build = os.path.join(BUILD_BASE_DIR, 'libs', 'translator')
 
-renderdelegate_script = os.path.join('render_delegate', 'SConscript')
-renderdelegate_build = os.path.join(BUILD_BASE_DIR, 'render_delegate')
-renderdelegate_plug_info = os.path.join('render_delegate', 'plugInfo.json.in')
-renderdelegate_out_plug_info = os.path.join(renderdelegate_build, 'plugInfo.json')
+renderdelegate_script = os.path.join('libs', 'render_delegate', 'SConscript')
+renderdelegate_build = os.path.join(BUILD_BASE_DIR, 'libs', 'render_delegate')
 
-ndrplugin_script = os.path.join('ndr', 'SConscript')
-ndrplugin_build = os.path.join(BUILD_BASE_DIR, 'ndr')
-ndrplugin_plug_info = os.path.join('ndr', 'plugInfo.json.in')
+renderdelegateplugin_script = os.path.join('plugins', 'render_delegate', 'SConscript')
+renderdelegateplugin_build = os.path.join(BUILD_BASE_DIR, 'plugins', 'render_delegate')
+renderdelegateplugin_plug_info = os.path.join('plugins', 'render_delegate', 'plugInfo.json.in')
+renderdelegateplugin_out_plug_info = os.path.join(renderdelegateplugin_build, 'plugInfo.json')
+
+ndrplugin_script = os.path.join('plugins', 'ndr', 'SConscript')
+ndrplugin_build = os.path.join(BUILD_BASE_DIR, 'plugins', 'ndr')
+ndrplugin_plug_info = os.path.join('plugins', 'ndr', 'plugInfo.json.in')
 ndrplugin_out_plug_info = os.path.join(ndrplugin_build, 'plugInfo.json')
 
-usdimagingplugin_script = os.path.join('usd_imaging', 'SConscript')
-usdimagingplugin_build = os.path.join(BUILD_BASE_DIR, 'usd_imaging')
-usdimagingplugin_plug_info = os.path.join('usd_imaging', 'plugInfo.json.in')
+usdimagingplugin_script = os.path.join('plugins', 'usd_imaging', 'SConscript')
+usdimagingplugin_build = os.path.join(BUILD_BASE_DIR, 'plugins', 'usd_imaging')
+usdimagingplugin_plug_info = os.path.join('plugins', 'usd_imaging', 'plugInfo.json.in')
 usdimagingplugin_out_plug_info = os.path.join(usdimagingplugin_build, 'plugInfo.json')
 
-scenedelegate_script = os.path.join('scene_delegate', 'SConscript')
-scenedelegate_build = os.path.join(BUILD_BASE_DIR, 'scene_delegate')
-scenedelegate_plug_info = os.path.join('scene_delegate', 'plugInfo.json.in')
+scenedelegate_script = os.path.join('plugins', 'scene_delegate', 'SConscript')
+scenedelegate_build = os.path.join(BUILD_BASE_DIR, 'plugins', 'scene_delegate')
+scenedelegate_plug_info = os.path.join('plugins', 'scene_delegate', 'plugInfo.json.in')
 scenedelegate_out_plug_info = os.path.join(scenedelegate_build, 'plugInfo.json')
 
-testsuite_build = os.path.join(BUILD_BASE_DIR, 'testsuite')
+testsuite_build = env.get('TESTSUITE_OUTPUT') or os.path.join(BUILD_BASE_DIR, 'testsuite')
 
 usd_input_resource_folder = os.path.join(USD_LIB, 'usd')
 
-hydra_test_script = os.path.join('testsuite','hydra_test', 'SConscript')
-hydra_test_build = os.path.join(BUILD_BASE_DIR, 'hydra_test')
-if BUILD_RENDER_DELEGATE and BUILD_TESTSUITE and env['ENABLE_HYDRA_TEST']:
-    env['HYDRA_TEST_BUILD'] = os.path.join(env['ROOT_DIR'], hydra_test_build, 'hydra_test.exe' if IS_WINDOWS else 'hydra_test')
-    HYDRA_TEST = env.SConscript(hydra_test_script, variant_dir = hydra_test_build, duplicate = 0, exports = 'env')
-    SConscriptChdir(0)
+if (BUILD_PROCEDURAL and env['ENABLE_HYDRA_IN_USD_PROCEDURAL']) or BUILD_RENDER_DELEGATE: # This could be disabled adding an experimental mode
+    RENDERDELEGATE = env.SConscript(renderdelegate_script, variant_dir = renderdelegate_build, duplicate = 0, exports = 'env') 
 else:
-    HYDRA_TEST = None
-
+    RENDERDELEGATE = None
 
 # Define targets
 # Target for the USD procedural
 
-if BUILD_PROCEDURAL or BUILD_USD_WRITER:
+if BUILD_PROCEDURAL:
     TRANSLATOR = env.SConscript(translator_script,
         variant_dir = translator_build,
         duplicate = 0, exports = 'env')
@@ -478,12 +519,47 @@ if BUILD_PROCEDURAL or BUILD_USD_WRITER:
 else:
     TRANSLATOR = None
 
-if BUILD_PROCEDURAL or BUILD_RENDER_DELEGATE or BUILD_NDR_PLUGIN or BUILD_USD_IMAGING_PLUGIN:
-    ARNOLDUSD_HEADER = env.Command(os.path.join(BUILD_BASE_DIR, 'arnold_usd.h'), 'arnold_usd.h.in', configure.configure_header_file) 
-else:
-    ARNOLDUSD_HEADER = None
-
 # Define targets
+
+#if (BUILD_PROCEDURAL and env['ENABLE_HYDRA_IN_USD_PROCEDURAL']) or BUILD_SCHEMAS:
+if BUILD_SCHEMAS:
+    SCHEMAS = env.SConscript(schemas_script,
+        variant_dir = schemas_build,
+        duplicate = 0, exports = 'env')
+    SConscriptChdir(0)
+else:
+    SCHEMAS = None
+
+if BUILD_RENDER_DELEGATE:
+    RENDERDELEGATEPLUGIN = env.SConscript(renderdelegateplugin_script, variant_dir = renderdelegateplugin_build, duplicate = 0, exports = 'env')
+    Depends(RENDERDELEGATEPLUGIN, COMMON[0])
+    SConscriptChdir(0)
+else:
+    RENDERDELEGATEPLUGIN = None
+
+if (BUILD_PROCEDURAL and env['ENABLE_HYDRA_IN_USD_PROCEDURAL']) or BUILD_NDR_PLUGIN:
+    NDRPLUGIN = env.SConscript(ndrplugin_script, variant_dir = ndrplugin_build, duplicate = 0, exports = 'env')
+    Depends(NDRPLUGIN, COMMON[0])
+    SConscriptChdir(0)
+else:
+    NDRPLUGIN = None
+
+if BUILD_USD_IMAGING_PLUGIN:
+    USDIMAGINGPLUGIN = env.SConscript(usdimagingplugin_script, variant_dir = usdimagingplugin_build, duplicate = 0, exports = 'env')
+    Depends(USDIMAGINGPLUGIN, COMMON[0])
+    SConscriptChdir(0)
+else:
+    USDIMAGINGPLUGIN = None
+
+if BUILD_SCENE_DELEGATE:
+    SCENEDELEGATE = env.SConscript(scenedelegate_script, variant_dir = scenedelegate_build, duplicate = 0, exports = 'env')
+    Depends(SCENEDELEGATE, COMMON[0])
+    SConscriptChdir(0)
+else:
+    SCENEDELEGATE = None
+
+#Depends(PROCEDURAL, SCHEMAS)
+
 # Target for the USD procedural
 if BUILD_PROCEDURAL:
     PROCEDURAL = env.SConscript(procedural_script,
@@ -491,7 +567,10 @@ if BUILD_PROCEDURAL:
         duplicate = 0, exports = 'env')
     SConscriptChdir(0)
     Depends(PROCEDURAL, TRANSLATOR[0])
-    Depends(PROCEDURAL, ARNOLDUSD_HEADER)
+    Depends(PROCEDURAL, COMMON[0])
+    if env['ENABLE_HYDRA_IN_USD_PROCEDURAL']:
+        Depends(PROCEDURAL, RENDERDELEGATE[0])
+        Depends(PROCEDURAL, NDRPLUGIN[0])
 
     if env['USD_BUILD_MODE'] == 'static':
         # For static builds of the procedural, we need to copy the usd 
@@ -508,61 +587,12 @@ if BUILD_PROCEDURAL:
                     if os.path.isdir(source_dir) and not os.path.exists(target_dir):
                         shutil.copytree(source_dir, target_dir)
 
+
 else:
     PROCEDURAL = None
 
-if BUILD_SCHEMAS:
-    SCHEMAS = env.SConscript(schemas_script,
-        variant_dir = schemas_build,
-        duplicate = 0, exports = 'env')
-    SConscriptChdir(0)
-else:
-    SCHEMAS = None
-
-if BUILD_USD_WRITER:
-    ARNOLD_TO_USD = env.SConscript(cmd_script, variant_dir = cmd_build, duplicate = 0, exports = 'env')
-    SConscriptChdir(0)
-    Depends(ARNOLD_TO_USD, TRANSLATOR[0])
-    if env['USD_BUILD_MODE'] == 'static':
-        # For static builds of the writer, we need to copy the usd 
-        # resources to the same path as the procedural
-        usd_target_resource_folder = os.path.join(os.path.dirname(os.path.abspath(str(ARNOLD_TO_USD[0]))), 'usd')
-        if os.path.exists(usd_input_resource_folder) and not os.path.exists(usd_target_resource_folder):
-            shutil.copytree(usd_input_resource_folder, usd_target_resource_folder)
-else:
-    ARNOLD_TO_USD = None
-
-if BUILD_RENDER_DELEGATE:
-    RENDERDELEGATE = env.SConscript(renderdelegate_script, variant_dir = renderdelegate_build, duplicate = 0, exports = 'env')
-    SConscriptChdir(0)
-    Depends(RENDERDELEGATE, ARNOLDUSD_HEADER)
-else:
-    RENDERDELEGATE = None
-
-if BUILD_NDR_PLUGIN:
-    NDRPLUGIN = env.SConscript(ndrplugin_script, variant_dir = ndrplugin_build, duplicate = 0, exports = 'env')
-    SConscriptChdir(0)
-    Depends(NDRPLUGIN, ARNOLDUSD_HEADER)
-else:
-    NDRPLUGIN = None
-
-if BUILD_USD_IMAGING_PLUGIN:
-    USDIMAGINGPLUGIN = env.SConscript(usdimagingplugin_script, variant_dir = usdimagingplugin_build, duplicate = 0, exports = 'env')
-    SConscriptChdir(0)
-    Depends(USDIMAGINGPLUGIN, ARNOLDUSD_HEADER)
-else:
-    USDIMAGINGPLUGIN = None
-
-if BUILD_SCENE_DELEGATE:
-    SCENEDELEGATE = env.SConscript(scenedelegate_script, variant_dir = scenedelegate_build, duplicate = 0, exports = 'env')
-    SConscriptChdir(0)
-    Depends(SCENEDELEGATE, ARNOLDUSD_HEADER)
-else:
-    SCENEDELEGATE = None
-
-#Depends(PROCEDURAL, SCHEMAS)
-
 if BUILD_DOCS:
+    env.Tool('doxygen')
     docs_output = os.path.join(BUILD_BASE_DIR, 'docs')
     env['DOXYGEN_TAGS'] = {
         'OUTPUT_DIRECTORY': docs_output
@@ -575,7 +605,7 @@ else:
 # extension.
 
 plugInfos = [
-    (renderdelegate_plug_info, renderdelegate_out_plug_info),
+    (renderdelegateplugin_plug_info, renderdelegateplugin_out_plug_info),
     (ndrplugin_plug_info, ndrplugin_out_plug_info),
     (scenedelegate_plug_info, scenedelegate_out_plug_info),
 ]
@@ -589,11 +619,19 @@ if BUILD_USD_IMAGING_PLUGIN:
                 source=usdimagingplugin_plug_info,
                 action=configure.configure_usd_maging_plug_info)
 
-if RENDERDELEGATE:
-    Depends(RENDERDELEGATE, renderdelegate_plug_info)
+if RENDERDELEGATEPLUGIN:
+    Depends(RENDERDELEGATEPLUGIN, renderdelegateplugin_plug_info)
 
 if SCENEDELEGATE:
     Depends(SCENEDELEGATE, scenedelegate_plug_info)
+
+# We now include the ndr plugin in the procedural, so we must add the plugInfo.json as well
+if BUILD_PROCEDURAL and env['ENABLE_HYDRA_IN_USD_PROCEDURAL']:
+    procedural_ndr_plug_info = os.path.join(BUILD_BASE_DIR, 'plugins', 'procedural', 'usd', 'ndrArnold', 'resources', 'plugInfo.json')
+    env.Command(target=procedural_ndr_plug_info,
+                source=ndrplugin_plug_info,
+                action=configure.configure_procedural_ndr_plug_info)
+    Depends(PROCEDURAL, procedural_ndr_plug_info)
 
 if BUILD_TESTSUITE:
     env['USD_PROCEDURAL_PATH'] = os.path.abspath(str(PROCEDURAL[0]))
@@ -615,12 +653,10 @@ if BUILD_TESTSUITE:
         if NDRPLUGIN:
             Depends(TESTSUITE, NDRPLUGIN)
     '''
-    if HYDRA_TEST:
-        Depends(TESTSUITE, HYDRA_TEST)
 else:
     TESTSUITE = None
 
-for target in [RENDERDELEGATE, PROCEDURAL, SCHEMAS, ARNOLD_TO_USD, RENDERDELEGATE, DOCS, TESTSUITE, NDRPLUGIN, USDIMAGINGPLUGIN, HYDRA_TEST]:
+for target in [RENDERDELEGATEPLUGIN, PROCEDURAL, SCHEMAS, RENDERDELEGATE, DOCS, TESTSUITE, NDRPLUGIN, USDIMAGINGPLUGIN]:
     if target:
         env.AlwaysBuild(target)
 
@@ -631,31 +667,20 @@ env.Alias('install', PREFIX)
 # Install compiled dynamic library
 if PROCEDURAL:
     INSTALL_PROC = env.Install(PREFIX_PROCEDURAL, PROCEDURAL)
-    INSTALL_PROC += env.Install(os.path.join(PREFIX_HEADERS, 'arnold_usd'), ARNOLDUSD_HEADER)
     if env['USD_BUILD_MODE'] == 'static':
         INSTALL_PROC += env.Install(PREFIX_PROCEDURAL, usd_input_resource_folder)
     env.Alias('procedural-install', INSTALL_PROC)
 
-if ARNOLD_TO_USD:
-    INSTALL_ARNOLD_TO_USD = env.Install(PREFIX_BIN, ARNOLD_TO_USD)
-    if env['USD_BUILD_MODE'] == 'static':
-        INSTALL_ARNOLD_TO_USD += env.Install(PREFIX_BIN, usd_input_resource_folder)
-    env.Alias('writer-install', INSTALL_ARNOLD_TO_USD)
-
-if RENDERDELEGATE:
+if RENDERDELEGATEPLUGIN:
     if IS_WINDOWS:
-        INSTALL_RENDERDELEGATE = env.Install(PREFIX_RENDER_DELEGATE, RENDERDELEGATE)
+        INSTALL_RENDERDELEGATE = env.Install(PREFIX_RENDER_DELEGATE, RENDERDELEGATEPLUGIN)
     else:
-        INSTALL_RENDERDELEGATE = env.InstallAs(os.path.join(PREFIX_RENDER_DELEGATE, 'hdArnold%s' % system.LIB_EXTENSION), RENDERDELEGATE)
-    INSTALL_RENDERDELEGATE += env.Install(os.path.join(PREFIX_RENDER_DELEGATE, 'hdArnold', 'resources'), [renderdelegate_out_plug_info])
+        INSTALL_RENDERDELEGATE = env.InstallAs(os.path.join(PREFIX_RENDER_DELEGATE, 'hdArnold%s' % system.LIB_EXTENSION), RENDERDELEGATEPLUGIN)
+    INSTALL_RENDERDELEGATE += env.Install(os.path.join(PREFIX_RENDER_DELEGATE, 'hdArnold', 'resources'), [renderdelegateplugin_out_plug_info])
     INSTALL_RENDERDELEGATE += env.Install(PREFIX_RENDER_DELEGATE, ['plugInfo.json'])
     INSTALL_RENDERDELEGATE += env.Install(os.path.join(PREFIX_HEADERS, 'arnold_usd', 'render_delegate'), env.Glob(os.path.join('render_delegate', '*.h')))
     env.Alias('delegate-install', INSTALL_RENDERDELEGATE)
-
-if HYDRA_TEST:
-    # For now install hydra_test along with the render delegate
-    env.Install(PREFIX_RENDER_DELEGATE, HYDRA_TEST)
-    
+   
 if NDRPLUGIN:
     if IS_WINDOWS:
         INSTALL_NDRPLUGIN = env.Install(PREFIX_NDR_PLUGIN, NDRPLUGIN)
@@ -684,11 +709,7 @@ if SCENEDELEGATE:
     INSTALL_SCENEDELEGATE += env.Install(os.path.join(PREFIX_SCENE_DELEGATE, 'imagingArnold', 'resources'), [scenedelegate_out_plug_info])
     INSTALL_SCENEDELEGATE += env.Install(PREFIX_SCENE_DELEGATE, ['plugInfo.json'])
     INSTALL_SCENEDELEGATE += env.Install(os.path.join(PREFIX_HEADERS, 'arnold_usd', 'scene_delegate'), env.Glob(os.path.join('scene_delegate', '*.h')))
-    env.Alias('delegate-install', INSTALL_SCENEDELEGATE)
-
-if ARNOLDUSD_HEADER:
-    INSTALL_ARNOLDUSDHEADER = env.Install(os.path.join(PREFIX_HEADERS, 'arnold_usd'), ARNOLDUSD_HEADER)
-    env.Alias('arnoldusdheader-install', INSTALL_ARNOLDUSDHEADER)
+    env.Alias('scenedelegate-install', INSTALL_SCENEDELEGATE)
 
 # This follows the standard layout of USD plugins / libraries.
 if SCHEMAS:

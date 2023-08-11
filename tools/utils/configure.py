@@ -13,7 +13,8 @@
 # limitations under the License.
 from string import Template
 
-from build_tools import convert_usd_version_to_int
+from .build_tools import convert_usd_version_to_int
+from . import system
 
 ARNOLD_CLASS_NAMES = [
     'Alembic', 'Box', 'Cone', 'Curves', 'Disk', 'Implicit', 'Nurbs', 'Plane',
@@ -31,7 +32,6 @@ def configure(source, target, env, config):
             trg.write(template.substitute(config))
 
 def configure_plug_info(source, target, env):
-    import system
     usd_version = convert_usd_version_to_int(env['USD_VERSION'])
     configure(source, target, env, {
         'LIB_EXTENSION': system.LIB_EXTENSION,
@@ -39,7 +39,6 @@ def configure_plug_info(source, target, env):
     })
 
 def configure_usd_maging_plug_info(source, target, env):
-    import system
     usd_version = convert_usd_version_to_int(env['USD_VERSION'])
     register_arnold_types = '\n'.join(['"UsdImagingArnold{}Adapter":{{"bases":["UsdImagingGprimAdapter"],"primTypeName":"Arnold{}"}},'.format(name, name) for name in ARNOLD_CLASS_NAMES])
     configure(source, target, env, {
@@ -48,17 +47,13 @@ def configure_usd_maging_plug_info(source, target, env):
         'REGISTER_ARNOLD_TYPES': register_arnold_types,
     })
 
-def configure_header_file(source, target, env):
-    usd_version = env['USD_VERSION'].split('.')
-    arnold_version = env['ARNOLD_VERSION'].split('.')
+def configure_procedural_ndr_plug_info(source, target, env):
+    usd_version = convert_usd_version_to_int(env['USD_VERSION'])
     configure(source, target, env, {
-        'USD_MAJOR_VERSION': usd_version[0],
-        'USD_MINOR_VERSION': usd_version[1],
-        'USD_PATCH_VERSION': usd_version[2],
-        'ARNOLD_VERSION_ARCH_NUM': arnold_version[0],
-        'ARNOLD_VERSION_MAJOR_NUM': arnold_version[1],
-        'ARNOLD_VERSION_MINOR_NUM': arnold_version[2],
+        'LIB_EXTENSION': system.LIB_EXTENSION,
     })
+    # TODO: when embedding ndr in the procedural, the line LibraryPath pointing to ndrArnold.so is not relevant anymore.
+    # The LibraryPath should be the empty string ""
 
 def configure_shape_adapters(source, target, env):
     create_adapter_classes = '\n'.join(['CREATE_ADAPTER_CLASS({});'.format(name) for name in ARNOLD_CLASS_NAMES])

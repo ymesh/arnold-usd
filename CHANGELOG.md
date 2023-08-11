@@ -1,4 +1,64 @@
-# Change Log
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+# Changelog
+
+## [Unreleased]
+
+### Feature
+- [usd#1435](https://github.com/Autodesk/arnold-usd/issues/1435) - Support "vertex" UV coordinates on Curves in the render delegate
+- [usd#1579](https://github.com/Autodesk/arnold-usd/issues/1579) - Curves without any width should render with a default value
+
+### Bug fixes
+- [usd#1538](https://github.com/Autodesk/arnold-usd/issues/1538) - Fix triplanar in USD Materialx
+- [usd#1588](https://github.com/Autodesk/arnold-usd/issues/1588) - Arnold schemas under a point instancer should be hidden
+- [usd#1597](https://github.com/Autodesk/arnold-usd/issues/1597) - Fix hdx dependency which was causing issues on linux with husk
+- [usd#1595](https://github.com/Autodesk/arnold-usd/issues/1595) - Support Arnold RenderVar filters in Hydra 
+
+
+## [7.2.2.1] - 2023-06-21
+
+### Bug fixes
+- [usd#1567](https://github.com/Autodesk/arnold-usd/issues/1567) - Fix metallic attribute in UsdPreviewSurface in the render delegate
+- [usd#1550](https://github.com/Autodesk/arnold-usd/issues/1550) - UsdPrimvarReader_float2 returning "st" not working in the usd procedural
+- [usd#1552](https://github.com/Autodesk/arnold-usd/issues/1552) - Retain attributes ordering in the Sdr registry
+- [usd#1548](https://github.com/Autodesk/arnold-usd/issues/1548) - Fix RenderProduct arnold:driver ignored in the render delegate
+- [usd#1546](https://github.com/Autodesk/arnold-usd/issues/1546) - Fix relative paths on arnold nodes
+
+
+## [7.2.2.0] - 2023-06-07
+
+### Feature
+- [usd#1492](https://github.com/Autodesk/arnold-usd/issues/1492) - Add Arnold render status and estimated render time to viewport annotation
+- [usd#1499](https://github.com/Autodesk/arnold-usd/issues/1499) - Add support for camera filtermap and uv_remap
+- [usd#1486](https://github.com/Autodesk/arnold-usd/issues/1486) - Add a "Mtl" scope for materials when authoring usd files
+- [usd#1529](https://github.com/Autodesk/arnold-usd/issues/1529) - Add AI_RAY_SUBSURFACE visibility flag support in the render delegate and procedural
+
+### Build
+- [usd#1480](https://github.com/Autodesk/arnold-usd/issues/1480) - Allow to specify a testsuite output folder
+- [usd#1463](https://github.com/Autodesk/arnold-usd/issues/1463) - Fix Windows builds with CMake
+- [usd#1471](https://github.com/Autodesk/arnold-usd/issues/1471) - Support relative paths for Arnold and USD Sdk
+- [usd#1466](https://github.com/Autodesk/arnold-usd/issues/1466) - Allow to run the testsuite without any build of the procedural
+- [usd#1508](https://github.com/Autodesk/arnold-usd/issues/1508) - Support relative paths for python / boost / tbb
+- [usd#1512](https://github.com/Autodesk/arnold-usd/issues/1512) - Remove deprecated ENABLE_MATERIALX build variable
+- [usd#1519](https://github.com/Autodesk/arnold-usd/issues/1519) - Procedural does not compile with older versions of Arnold
+
+### Bug fixes
+- [usd#1502](https://github.com/Autodesk/arnold-usd/issues/1502) - Render delegate crashes with empty arrays.
+- [usd#1522](https://github.com/Autodesk/arnold-usd/issues/1522) - Support UsdPrimvarReader_float2 shader returning the "st" variable
+- [usd#1530](https://github.com/Autodesk/arnold-usd/issues/1530) - Fix a crash when a user primvars has an empty array on a keyframe
+- [usd#1535](https://github.com/Autodesk/arnold-usd/issues/1535) - Fixed Render delegate crashes when visibility is set on lights
+- [usd#1532](https://github.com/Autodesk/arnold-usd/issues/1532) - Schemas are not declaring asset parameters for filenames
+- [usd#1525](https://github.com/Autodesk/arnold-usd/issues/1525) - Default values for AA sampling and ray depths in direct USD renders are now increased to be equal to render delegate defaults.
+
+## [7.2.1.1] - 2023-04-19 
+
+### Bug fixes
+- [usd#1426](https://github.com/Autodesk/arnold-usd/issues/1426) - Skinned transforms are now correctly used on the skinned meshes.
+- [usd#1485](https://github.com/Autodesk/arnold-usd/issues/1485) - MaterialX shader nodes should have "auto" colorspace by default 
+- [usd#1477](https://github.com/Autodesk/arnold-usd/issues/1477) - A a note in the README for the flickering issue with instances which can be fixed with the `USD_ASSIGN_PROTOTYPES_DETERMINISTICALLY` environment variable. 
+- [usd#1462](https://github.com/Autodesk/arnold-usd/issues/1462) - Ensure shader scope doesn't appear twice in the hierarchy.
+- [usd#1459](https://github.com/Autodesk/arnold-usd/issues/1459) - Support Shaders with multiple outputs
+- [usd#1359](https://github.com/Autodesk/arnold-usd/issues/1359) - Refresh the arnold instancer when the prototype mesh points have changed.
+- [usd#1483](https://github.com/Autodesk/arnold-usd/issues/1483) - Indexed normals with vertex interpolation are now converted properly.
 
 ## [7.0.0.1] - 2021-11-24
 
@@ -6,6 +66,7 @@
 
 #### Build
 - #923 Testsuite fails with Arnold 7
+- #1487 Update Scons to build on windows with MSVC 14.3 
 
 #### Procedural
 - #458 Point instancer should prune the primitives under its hierarchy
